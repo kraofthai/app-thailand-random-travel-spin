@@ -1,0 +1,106 @@
+{
+  "project_info": {
+    "project_number": "155085357502",
+    "project_id": "random-travel-27cc6",
+    "storage_bucket": "random-travel-27cc6.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:155085357502:android:2267432958195f169cb9ef",
+        "android_client_info": {
+          "package_name": "com.example.thailand_random_travel"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "155085357502-5hceap40fsqlemugvdeepfahhn4pch7v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.thailand_random_travel",
+            "certificate_hash": "2e293bcd36a153667e716cb79dc3f810ef542b1b"
+          }
+        },
+        {
+          "client_id": "155085357502-ru2s5kp02ftsd3nmkv2r8vn730ho47l7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3905vsDp6B5Wt3x0xHg2MgEi-SEnEgBM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "155085357502-ru2s5kp02ftsd3nmkv2r8vn730ho47l7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "155085357502-aar6lnr88e3t54705ok3c1khhj0c1e8j.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.thailandRandomTravel"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:155085357502:android:c80a53073352e6f19cb9ef",
+        "android_client_info": {
+          "package_name": "com.teawnaid.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "155085357502-n06l61tvre66p8tk4p9g91qi4jhvurco.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.teawnaid.app",
+            "certificate_hash": "2e293bcd36a153667e716cb79dc3f810ef542b1b"
+          }
+        },
+        {
+          "client_id": "155085357502-qvkcklrooslj1i2m74eg07d545kjk9a6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.teawnaid.app",
+            "certificate_hash": "8b289ad493a1745b2bbad5c956e3592dc73a23f5"
+          }
+        },
+        {
+          "client_id": "155085357502-ru2s5kp02ftsd3nmkv2r8vn730ho47l7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3905vsDp6B5Wt3x0xHg2MgEi-SEnEgBM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "155085357502-ru2s5kp02ftsd3nmkv2r8vn730ho47l7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "155085357502-aar6lnr88e3t54705ok3c1khhj0c1e8j.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.thailandRandomTravel"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

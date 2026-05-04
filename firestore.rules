@@ -1,0 +1,124 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validPointType(type, points) {
+      return (type == 'daily_open' && points == 5)
+        || (type == 'spin_trip' && points == 2)
+        || (type == 'save_place' && points == 3)
+        || (type == 'check_in' && points == 20)
+        || (type == 'review_upload' && points == 10)
+        || (type == 'check_in_review' && points == 30)
+        || (type == 'challenge_complete' && points == 25)
+        || (type == 'invite_friend' && points == 30);
+    }
+
+    function validBetaPointIncrease() {
+      return !('points' in request.resource.data.diff(resource.data).changedKeys())
+        || (
+          request.resource.data.points is int
+          && (
+            (
+              !('points' in resource.data.keys())
+              && request.resource.data.points >= 0
+              && request.resource.data.points <= 30
+            )
+            || (
+              resource.data.points is int
+              && request.resource.data.points >= resource.data.points
+              && request.resource.data.points <= resource.data.points + 30
+            )
+          )
+        );
+    }
+
+    function validLeaderboardPointIncrease(entryId) {
+      return request.resource.data.points is int
+        && (
+          (
+            !exists(/databases/$(database)/documents/leaderboard/$(entryId))
+            && request.resource.data.points >= 0
+            && request.resource.data.points <= 30
+          )
+          || (
+            resource.data.points is int
+            && request.resource.data.points >= resource.data.points
+            && request.resource.data.points <= resource.data.points + 30
+          )
+        );
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && !('points' in request.resource.data.keys())
+        && !('totalSpin' in request.resource.data.keys())
+        && !('level' in request.resource.data.keys());
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['uid', 'displayName', 'photoUrl', 'createdAt', 'lastLogin', 'updatedAt', 'points'])
+        && request.resource.data.uid == request.auth.uid
+        && validBetaPointIncrease()
+        && !('totalSpin' in request.resource.data.diff(resource.data).changedKeys())
+        && !('level' in request.resource.data.diff(resource.data).changedKeys());
+    }
+
+    match /point_transactions/{transactionId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && validPointType(request.resource.data.type, request.resource.data.points)
+        && request.resource.data.mode == 'beta_client_transaction'
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 120
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'type',
+          'points',
+          'description',
+          'mode',
+          'createdAt',
+        ]);
+      allow update, delete: if false;
+    }
+
+    match /leaderboard/{entryId} {
+      allow read: if true;
+      allow create, update: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.mode == 'beta_client_transaction'
+        && validLeaderboardPointIncrease(entryId)
+        && request.resource.data.month is string
+        && request.resource.data.month.matches('^[0-9]{4}-[0-9]{2}$')
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'displayName',
+          'photoUrl',
+          'points',
+          'month',
+          'mode',
+          'updatedAt',
+        ]);
+      allow delete: if false;
+    }
+
+    match /rewards/{rewardId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

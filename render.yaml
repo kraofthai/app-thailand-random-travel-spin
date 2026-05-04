@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: teawnaid-tat-proxy
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PLACES_PROVIDER
+        value: tat
+      - key: TAT_API_BASE_URL
+        value: https://tatdataapi.io
+      - key: TAT_API_AUTH_HEADER
+        value: x-api-key
+      - key: TAT_API_PLACES_PATH
+        value: /api/v2/places
+      - key: TAT_API_PLACE_DETAIL_PATH
+        value: /api/v2/places/{id}
+      - key: TAT_API_DEFAULT_LIMIT
+        value: "20"
+      - key: TAT_API_LOCALE
+        value: en
+      - key: TAT_API_KEY
+        sync: false
+      - key: TAT_API_KEY_PREFIX
+        sync: false
