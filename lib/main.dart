@@ -833,35 +833,11 @@ class PlacesApiClient {
   }
 
   Color _colorFromText(String text) {
-    const palette = [
-      Color(0xFF4F8A5B),
-      Color(0xFFD19A3E),
-      Color(0xFFC77736),
-      Color(0xFF278EA5),
-      Color(0xFF8A6F4D),
-      Color(0xFF1E9FB2),
-    ];
-    return palette[text.hashCode.abs() % palette.length];
+    return _fallbackColorFromText(text);
   }
 
   IconData _iconForText(String text) {
-    final lower = text.toLowerCase();
-    if (lower.contains('beach') ||
-        lower.contains('island') ||
-        lower.contains('หาด') ||
-        lower.contains('เกาะ')) {
-      return Icons.beach_access_rounded;
-    }
-    if (lower.contains('temple') || lower.contains('วัด')) {
-      return Icons.temple_buddhist_rounded;
-    }
-    if (lower.contains('park') || lower.contains('forest')) {
-      return Icons.forest_rounded;
-    }
-    if (lower.contains('waterfall') || lower.contains('น้ำตก')) {
-      return Icons.waterfall_chart_rounded;
-    }
-    return Icons.place_rounded;
+    return _fallbackIconForText(text);
   }
 }
 
@@ -926,6 +902,106 @@ _ChallengeSpec _challengeSpec(ChallengeType type) {
 
 String _placeKey(TravelDestination place) {
   return '${place.name}|${place.province}';
+}
+
+Color _fallbackColorFromText(String text) {
+  const palette = [
+    Color(0xFF4F8A5B),
+    Color(0xFFD19A3E),
+    Color(0xFFC77736),
+    Color(0xFF278EA5),
+    Color(0xFF8A6F4D),
+    Color(0xFF1E9FB2),
+  ];
+  return palette[text.hashCode.abs() % palette.length];
+}
+
+IconData _fallbackIconForText(String text) {
+  final lower = text.toLowerCase();
+  if (lower.contains('beach') ||
+      lower.contains('island') ||
+      lower.contains('หาด') ||
+      lower.contains('เกาะ')) {
+    return Icons.beach_access_rounded;
+  }
+  if (lower.contains('temple') || lower.contains('วัด')) {
+    return Icons.temple_buddhist_rounded;
+  }
+  if (lower.contains('park') || lower.contains('forest')) {
+    return Icons.forest_rounded;
+  }
+  if (lower.contains('waterfall') || lower.contains('น้ำตก')) {
+    return Icons.waterfall_chart_rounded;
+  }
+  return Icons.place_rounded;
+}
+
+Map<String, dynamic> _placeToJson(TravelDestination place) {
+  return {
+    'name': place.name,
+    'province': place.province,
+    'region': place.region,
+    'vibe': place.vibe,
+    'bestFor': place.bestFor,
+    'imageUrl': place.imageUrl,
+    'filterText': place.filterText,
+    'categoryFilters':
+        place.categoryFilters.map((category) => category.name).toList(),
+    'latitude': place.latitude,
+    'longitude': place.longitude,
+  };
+}
+
+TravelDestination? _placeFromJson(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final name = value['name'];
+  final province = value['province'];
+  if (name is! String || name.trim().isEmpty) return null;
+  if (province is! String || province.trim().isEmpty) return null;
+
+  final region =
+      value['region'] is String
+          ? value['region'] as String
+          : provinceToRegion[province.trim()] ?? 'จาก API';
+  final categories =
+      value['categoryFilters'] is List
+          ? (value['categoryFilters'] as List)
+              .whereType<String>()
+              .map(
+                (name) => PlaceCategoryFilter.values.firstWhere(
+                  (category) => category.name == name,
+                  orElse: () => PlaceCategoryFilter.other,
+                ),
+              )
+              .toSet()
+          : <PlaceCategoryFilter>{};
+
+  return TravelDestination(
+    name: name.trim(),
+    province: province.trim(),
+    wheelLabel: _shortWheelLabel(province.trim()),
+    region: region,
+    vibe:
+        value['vibe'] is String
+            ? value['vibe'] as String
+            : 'สถานที่จากฐานข้อมูล TAT',
+    bestFor:
+        value['bestFor'] is String
+            ? value['bestFor'] as String
+            : 'ลองสุ่มแล้วเปิดทริปใหม่จากข้อมูลจริง',
+    color: regionColors[region] ?? _fallbackColorFromText(name),
+    icon: _fallbackIconForText(name),
+    imageUrl: value['imageUrl'] is String ? value['imageUrl'] as String : null,
+    filterText:
+        value['filterText'] is String ? value['filterText'] as String : '',
+    categoryFilters: categories,
+    latitude:
+        value['latitude'] is num ? (value['latitude'] as num).toDouble() : null,
+    longitude:
+        value['longitude'] is num
+            ? (value['longitude'] as num).toDouble()
+            : null,
+  );
 }
 
 String _dateKey(DateTime date) {
@@ -1456,6 +1532,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   final Set<String> _savedPlaceKeys = {};
   final Set<String> _badgeNames = {};
   final List<String> _historyKeys = [];
+  final Map<String, TravelDestination> _knownPlaces = {};
   InterstitialAd? _interstitialAd;
   int _selectedTab = 0;
   bool _showFilters = false;
@@ -1513,6 +1590,12 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     return _smartMode ? _smartFiltered(nearbyPool) : nearbyPool;
   }
 
+  int get _randomAvailableCount {
+    if (_nearbyMode) return _pool.length;
+    if (_mode == SpinMode.all) return _totalPlaces;
+    return max(_pool.length, 1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1520,6 +1603,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     if (initial != null && initial.isNotEmpty) {
       _destinations = initial;
       _selected = initial.first;
+      _rememberPlaces(initial);
       _isLoadingPlaces = false;
       _totalPlaces = max(
         widget.initialTotalPlaces ?? initial.length,
@@ -1540,6 +1624,16 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     unawaited(_loadAuthState());
     if (initial == null || initial.isEmpty) {
       _loadPlaces();
+    }
+  }
+
+  void _rememberPlace(TravelDestination place) {
+    _knownPlaces[_placeKey(place)] = place;
+  }
+
+  void _rememberPlaces(Iterable<TravelDestination> places) {
+    for (final place in places) {
+      _rememberPlace(place);
     }
   }
 
@@ -1811,6 +1905,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
 
     if (!mounted) return;
     setState(() {
+      _rememberPlaces(_storedKnownPlaces(prefs));
       _lastDailyDate = today;
       _streakDays = max(1, streak);
       _dailySpinsLeft = dailySpins;
@@ -1836,6 +1931,21 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     await _saveGameState();
   }
 
+  List<TravelDestination> _storedKnownPlaces(SharedPreferences prefs) {
+    try {
+      final raw = prefs.getString('knownPlacesJson');
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .map(_placeFromJson)
+          .whereType<TravelDestination>()
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> _saveGameState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lastDailyDate', _lastDailyDate);
@@ -1853,6 +1963,14 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     await prefs.setStringList('savedPlaces', _savedPlaceKeys.toList());
     await prefs.setStringList('badges', _badgeNames.toList());
     await prefs.setStringList('history', _historyKeys);
+    final keysToPersist = {..._savedPlaceKeys, ..._historyKeys};
+    final knownPayload =
+        keysToPersist
+            .map((key) => _knownPlaces[key])
+            .whereType<TravelDestination>()
+            .map(_placeToJson)
+            .toList();
+    await prefs.setString('knownPlacesJson', jsonEncode(knownPayload));
   }
 
   Future<bool> _ensureLoginFor(String action) async {
@@ -2016,6 +2134,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   _ChallengeSpec? _recordTrip(TravelDestination place) {
+    _rememberPlace(place);
     final key = _placeKey(place);
     _historyKeys.remove(key);
     _historyKeys.insert(0, key);
@@ -2050,9 +2169,8 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   int _coveredRegionsCount() {
-    final byKey = {for (final place in _destinations) _placeKey(place): place};
     return _historyKeys
-        .map((key) => byKey[key]?.region)
+        .map((key) => _knownPlaces[key]?.region)
         .whereType<String>()
         .toSet()
         .length;
@@ -2085,6 +2203,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   void _toggleSaved(TravelDestination place) {
+    _rememberPlace(place);
     final key = _placeKey(place);
     var added = false;
     setState(() {
@@ -2720,7 +2839,10 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   List<TravelDestination> _placesForKeys(Iterable<String> keys) {
-    final byKey = {for (final place in _destinations) _placeKey(place): place};
+    final byKey = {
+      for (final place in _destinations) _placeKey(place): place,
+      ..._knownPlaces,
+    };
     return keys
         .map((key) => byKey[key])
         .whereType<TravelDestination>()
@@ -2728,9 +2850,8 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   int _historyProvinceCount() {
-    final byKey = {for (final place in _destinations) _placeKey(place): place};
     return _historyKeys
-        .map((key) => byKey[key]?.province)
+        .map((key) => _knownPlaces[key]?.province)
         .whereType<String>()
         .toSet()
         .length;
@@ -2808,6 +2929,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
       if (!mounted) return;
       setState(() {
         _destinations = preview.places;
+        _rememberPlaces(preview.places);
         _totalPlaces = max(preview.total, preview.places.length);
         _eligibleCacheCategory = null;
         _eligibleCache = null;
@@ -2821,6 +2943,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
       if (!mounted) return;
       setState(() {
         _destinations = destinations;
+        _rememberPlaces(destinations);
         _eligibleCacheCategory = null;
         _eligibleCache = null;
         if (_regions.isNotEmpty) _selectedRegion = _regions.first;
@@ -2867,7 +2990,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
           child: _HomeMapSpinHero(
             selected: _selected,
-            enabledCount: _pool.length,
+            enabledCount: _randomAvailableCount,
             totalCount: _totalPlaces,
             remainingSpins: _availableSpins,
             progress: _shuffleController,
@@ -2906,6 +3029,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
               selected: _categoryFilter,
               totalCount: _totalPlaces,
               selectedCount: _eligibleDestinations.length,
+              usesFullDatabase: !_nearbyMode,
               onChanged: (value) {
                 setState(() {
                   _categoryFilter = value;
@@ -5914,12 +6038,14 @@ class _CategoryFilterPanel extends StatelessWidget {
     required this.selected,
     required this.totalCount,
     required this.selectedCount,
+    required this.usesFullDatabase,
     required this.onChanged,
   });
 
   final PlaceCategoryFilter selected;
   final int totalCount;
   final int selectedCount;
+  final bool usesFullDatabase;
   final ValueChanged<PlaceCategoryFilter> onChanged;
 
   @override
@@ -5963,7 +6089,9 @@ class _CategoryFilterPanel extends StatelessWidget {
                     Text(
                       selected == PlaceCategoryFilter.all
                           ? 'พร้อมสุ่มจาก $totalCount สถานที่'
-                          : '${activeMeta.label} มี $selectedCount ตัวเลือก',
+                          : usesFullDatabase
+                          ? '${activeMeta.label} • สุ่มจากฐานข้อมูลทั้งหมด'
+                          : '${activeMeta.label} มี $selectedCount ตัวเลือกใกล้คุณ',
                       style: TextStyle(
                         color: Colors.black.withValues(alpha: 0.58),
                       ),
