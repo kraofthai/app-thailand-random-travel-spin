@@ -58,6 +58,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "155085357502-j3a0uf74f6uudvc7hb3e59pg7o0l63jo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.teawnaid.app",
+            "certificate_hash": "63757f5e7ece39bf0a6df26bfaabae27c6ac8a7f"
+          }
+        },
+        {
           "client_id": "155085357502-n06l61tvre66p8tk4p9g91qi4jhvurco.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
