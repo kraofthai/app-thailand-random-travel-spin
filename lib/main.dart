@@ -246,6 +246,55 @@ class TravelUser {
   final bool isGuest;
 }
 
+class LeaderboardEntry {
+  const LeaderboardEntry({
+    required this.userId,
+    required this.displayName,
+    required this.points,
+    required this.month,
+    this.photoUrl,
+  });
+
+  final String userId;
+  final String displayName;
+  final int points;
+  final String month;
+  final String? photoUrl;
+}
+
+String _leaderboardMonthKey(DateTime date) {
+  return '${date.year}-${date.month.toString().padLeft(2, '0')}';
+}
+
+LeaderboardEntry? _leaderboardEntryFromDoc(
+  QueryDocumentSnapshot<Map<String, dynamic>> doc,
+) {
+  final data = doc.data();
+  final userId = data['userId'] as String?;
+  if (userId == null || userId.isEmpty) return null;
+
+  final displayName = data['displayName'] as String?;
+  final month = data['month'] as String?;
+  final rawPoints = data['points'];
+  final points =
+      rawPoints is int
+          ? rawPoints
+          : rawPoints is num
+          ? rawPoints.toInt()
+          : 0;
+
+  return LeaderboardEntry(
+    userId: userId,
+    displayName:
+        displayName == null || displayName.trim().isEmpty
+            ? 'นักเดินทาง'
+            : displayName.trim(),
+    photoUrl: data['photoUrl'] as String?,
+    points: points,
+    month: month ?? _leaderboardMonthKey(DateTime.now()),
+  );
+}
+
 class AuthGateway {
   AuthGateway._();
 
@@ -3179,6 +3228,9 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   List<Widget> _buildLeaderboardSlivers() {
+    final leaderboardMonth = _leaderboardMonthKey(DateTime.now());
+    final firebaseReady = AuthGateway.instance.firebaseReady;
+
     return [
       SliverToBoxAdapter(
         child: _PageHeader(
@@ -3188,21 +3240,67 @@ class _TravelSpinPageState extends State<TravelSpinPage>
         ),
       ),
       SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          child: _LeaderboardPanel(
-            user: _travelUser,
-            points: _travelPoints,
-            checkIns: _checkInCount,
-            bonusSpins: _bonusSpins,
-            firebaseReady: AuthGateway.instance.firebaseReady,
-            onLogin:
-                () => _showLoginSheet(
-                  reason: 'Leaderboard และ Point ต้องผูกกับบัญชี',
+        child:
+            firebaseReady
+                ? StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream:
+                      FirebaseFirestore.instance
+                          .collection('leaderboard')
+                          .where('month', isEqualTo: leaderboardMonth)
+                          .orderBy('points', descending: true)
+                          .limit(20)
+                          .snapshots(),
+                  builder: (context, snapshot) {
+                    final entries =
+                        snapshot.data?.docs
+                            .map(_leaderboardEntryFromDoc)
+                            .whereType<LeaderboardEntry>()
+                            .toList() ??
+                        const <LeaderboardEntry>[];
+
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                      child: _LeaderboardPanel(
+                        user: _travelUser,
+                        points: _travelPoints,
+                        checkIns: _checkInCount,
+                        bonusSpins: _bonusSpins,
+                        firebaseReady: firebaseReady,
+                        leaderboardEntries: entries,
+                        leaderboardLoading:
+                            snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            !snapshot.hasData,
+                        leaderboardError: snapshot.hasError,
+                        leaderboardMonth: leaderboardMonth,
+                        onLogin:
+                            () => _showLoginSheet(
+                              reason: 'Leaderboard และ Point ต้องผูกกับบัญชี',
+                            ),
+                        onRedeemSpin: _redeemSpinWithPoints,
+                      ),
+                    );
+                  },
+                )
+                : Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: _LeaderboardPanel(
+                    user: _travelUser,
+                    points: _travelPoints,
+                    checkIns: _checkInCount,
+                    bonusSpins: _bonusSpins,
+                    firebaseReady: firebaseReady,
+                    leaderboardEntries: const <LeaderboardEntry>[],
+                    leaderboardLoading: false,
+                    leaderboardError: false,
+                    leaderboardMonth: leaderboardMonth,
+                    onLogin:
+                        () => _showLoginSheet(
+                          reason: 'Leaderboard และ Point ต้องผูกกับบัญชี',
+                        ),
+                    onRedeemSpin: _redeemSpinWithPoints,
+                  ),
                 ),
-            onRedeemSpin: _redeemSpinWithPoints,
-          ),
-        ),
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 96)),
     ];
@@ -3780,6 +3878,10 @@ class _LeaderboardPanel extends StatelessWidget {
     required this.checkIns,
     required this.bonusSpins,
     required this.firebaseReady,
+    required this.leaderboardEntries,
+    required this.leaderboardLoading,
+    required this.leaderboardError,
+    required this.leaderboardMonth,
     required this.onLogin,
     required this.onRedeemSpin,
   });
@@ -3789,17 +3891,39 @@ class _LeaderboardPanel extends StatelessWidget {
   final int checkIns;
   final int bonusSpins;
   final bool firebaseReady;
+  final List<LeaderboardEntry> leaderboardEntries;
+  final bool leaderboardLoading;
+  final bool leaderboardError;
+  final String leaderboardMonth;
   final VoidCallback onLogin;
   final VoidCallback onRedeemSpin;
 
   @override
   Widget build(BuildContext context) {
     final signedIn = user != null;
-    final rows = [
-      (user?.displayName ?? 'คุณ', points, checkIns, true),
-      ('นักเที่ยวสายเหนือ', max(60, points - 30), max(0, checkIns - 1), false),
-      ('Cafe Hopper', max(20, points - 90), max(0, checkIns - 2), false),
-    ]..sort((a, b) => b.$2.compareTo(a.$2));
+    final currentUid = user?.uid;
+    final localEntry = LeaderboardEntry(
+      userId: currentUid ?? 'local-user',
+      displayName: user?.displayName ?? 'คุณ',
+      photoUrl: user?.photoUrl,
+      points: points,
+      month: leaderboardMonth,
+    );
+    final rows = <LeaderboardEntry>[
+      if (leaderboardEntries.isEmpty) localEntry else ...leaderboardEntries,
+    ];
+    if (signedIn &&
+        currentUid != null &&
+        !user!.isGuest &&
+        rows.every((entry) => entry.userId != currentUid) &&
+        points > 0) {
+      rows.add(localEntry);
+    }
+    rows.sort((a, b) => b.points.compareTo(a.points));
+    final currentRank =
+        currentUid == null
+            ? null
+            : rows.indexWhere((entry) => entry.userId == currentUid) + 1;
 
     return Column(
       children: [
@@ -3854,8 +3978,12 @@ class _LeaderboardPanel extends StatelessWidget {
               if (signedIn && !user!.isGuest) ...[
                 const SizedBox(height: 8),
                 Text(
-                  firebaseReady
-                      ? 'ซิงก์ Firebase แล้ว'
+                  leaderboardError
+                      ? 'โหลดอันดับไม่ได้ชั่วคราว ใช้แต้มในเครื่องก่อน'
+                      : leaderboardLoading
+                      ? 'กำลังโหลดอันดับเดือนนี้...'
+                      : firebaseReady
+                      ? 'อันดับสดเดือนนี้${currentRank != null && currentRank > 0 ? ' • คุณอยู่อันดับ $currentRank' : ''}'
                       : 'รอเชื่อม Firebase config',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.78),
@@ -3893,64 +4021,124 @@ class _LeaderboardPanel extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         for (var i = 0; i < rows.length; i++)
+          _LeaderboardRow(
+            entry: rows[i],
+            rank: i + 1,
+            isCurrentUser: currentUid != null && rows[i].userId == currentUid,
+          ),
+        if (firebaseReady &&
+            signedIn &&
+            !user!.isGuest &&
+            leaderboardEntries.isEmpty &&
+            !leaderboardLoading &&
+            !leaderboardError)
           Container(
-            margin: const EdgeInsets.only(bottom: 10),
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 2),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: rows[i].$4 ? const Color(0xFFEAF2FF) : Colors.white,
+              color: Colors.white.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color:
-                    rows[i].$4
-                        ? _brandBlue.withValues(alpha: 0.22)
-                        : Colors.white,
+              border: Border.all(color: _brandBlue.withValues(alpha: 0.12)),
+            ),
+            child: Text(
+              'ยังไม่มีข้อมูลอันดับบน server ของเดือนนี้ ลอง Login แล้วทำกิจกรรมเช่น สุ่ม บันทึก หรือ Check-in 1 ครั้ง',
+              style: TextStyle(
+                color: _ink.withValues(alpha: 0.62),
+                fontWeight: FontWeight.w800,
               ),
             ),
-            child: Row(
+          ),
+      ],
+    );
+  }
+}
+
+class _LeaderboardRow extends StatelessWidget {
+  const _LeaderboardRow({
+    required this.entry,
+    required this.rank,
+    required this.isCurrentUser,
+  });
+
+  final LeaderboardEntry entry;
+  final int rank;
+  final bool isCurrentUser;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isCurrentUser ? const Color(0xFFEAF2FF) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color:
+              isCurrentUser ? _brandBlue.withValues(alpha: 0.22) : Colors.white,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _brandDeepBlue.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: isCurrentUser ? _brandBlue : _softSky,
+            child: Text(
+              '$rank',
+              style: TextStyle(
+                color: isCurrentUser ? Colors.white : _ink,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (entry.photoUrl != null && entry.photoUrl!.isNotEmpty) ...[
+            CircleAvatar(
+              radius: 18,
+              backgroundImage: NetworkImage(entry.photoUrl!),
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  backgroundColor: rows[i].$4 ? _brandBlue : _softSky,
-                  child: Text(
-                    '${i + 1}',
-                    style: TextStyle(
-                      color: rows[i].$4 ? Colors.white : _ink,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        rows[i].$1,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      Text(
-                        '${rows[i].$3} check-in',
-                        style: TextStyle(
-                          color: _ink.withValues(alpha: 0.56),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                Text(
+                  entry.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
                 Text(
-                  '${rows[i].$2} pt',
-                  style: const TextStyle(
-                    color: _brandBlue,
-                    fontWeight: FontWeight.w900,
+                  isCurrentUser ? 'คุณ • อันดับเดือนนี้' : 'นักเดินทางเดือนนี้',
+                  style: TextStyle(
+                    color: _ink.withValues(alpha: 0.56),
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
           ),
-      ],
+          const SizedBox(width: 8),
+          Text(
+            '${entry.points} pt',
+            style: const TextStyle(
+              color: _brandBlue,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
