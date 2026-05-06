@@ -20,6 +20,8 @@ services:
         value: "20"
       - key: TAT_API_LOCALE
         value: en
+      - key: PLACES_TOTAL_COUNT
+        value: "20110"
       - key: TAT_API_KEY
         sync: false
       - key: TAT_API_KEY_PREFIX

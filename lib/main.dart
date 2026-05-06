@@ -527,7 +527,7 @@ class PlacesApiClient {
     final uri = Uri.parse(
       '$normalizedBaseUrl/places',
     ).replace(queryParameters: {'limit': '$limit'});
-    final response = await http.get(uri).timeout(const Duration(seconds: 18));
+    final response = await http.get(uri).timeout(const Duration(seconds: 6));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Places API returned ${response.statusCode}');
@@ -572,7 +572,7 @@ class PlacesApiClient {
     final uri = Uri.parse(
       '$normalizedBaseUrl/places/random',
     ).replace(queryParameters: query.isEmpty ? null : query);
-    final response = await http.get(uri).timeout(const Duration(seconds: 18));
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Random places API returned ${response.statusCode}');

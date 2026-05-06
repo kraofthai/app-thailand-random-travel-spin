@@ -7,6 +7,7 @@ import admin from 'firebase-admin';
 const env = loadEnv();
 const port = Number(env.PORT || 3000);
 const host = env.HOST || '0.0.0.0';
+const knownPlacesTotal = Number(env.PLACES_TOTAL_COUNT || 20110);
 const execFileAsync = promisify(execFile);
 let allPlacesCache = null;
 let allPlacesCachePromise = null;
@@ -582,32 +583,21 @@ async function fetchCachedPlaces({
   }
   if (category) query = query.where('category', '==', category);
 
-  const total = await countCachedPlaces(query);
   const snapshot = await query.limit(safeLimit).get();
   const data = snapshot.docs.map((doc) => publicPlace(doc.data()));
+  const hasFilter = Boolean(province || region || category || categoryFilter);
 
   return {
     data,
     pagination: {
       pageNumber: 1,
       pageSize: safeLimit,
-      total: total ?? data.length,
+      total: hasFilter ? data.length : Math.max(knownPlacesTotal, data.length),
       returned: data.length,
     },
     source: 'firestore',
     cachedAt: new Date().toISOString(),
   };
-}
-
-async function countCachedPlaces(query) {
-  try {
-    const snapshot = await query.count().get();
-    const count = snapshot.data().count;
-    return Number.isFinite(count) ? count : null;
-  } catch (error) {
-    console.warn('Unable to count cached places; returning page count only', error);
-    return null;
-  }
 }
 
 function publicPlace(place) {
