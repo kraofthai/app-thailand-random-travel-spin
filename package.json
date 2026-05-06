@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs"
+    "check": "node --check server.mjs",
+    "build:places-cache": "node scripts/build-places-cache.mjs"
   },
   "engines": {
     "node": ">=20"

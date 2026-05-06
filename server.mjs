@@ -11,6 +11,7 @@ const knownPlacesTotal = Number(env.PLACES_TOTAL_COUNT || 20110);
 const execFileAsync = promisify(execFile);
 let allPlacesCache = null;
 let allPlacesCachePromise = null;
+let placesFileCache = null;
 let firestore = null;
 
 const provinceToRegion = {
@@ -244,12 +245,24 @@ function categoryFiltersForText(rawText) {
     'รีสอร์ต',
     'ที่พัก',
   ]);
+  const isCommerce = hasAnyKeyword(text, [
+    'shop',
+    'store',
+    'market',
+    'otop',
+    'souvenir',
+    'ร้านค้า',
+    'ตลาด',
+    'โอทอป',
+    'ของฝาก',
+  ]);
 
   if (isFood) categories.add('food');
   if (isHotel) categories.add('hotelResort');
   if (
     !isFood &&
     !isHotel &&
+    !isCommerce &&
     hasAnyKeyword(text, [
       'nature',
       'park',
@@ -277,6 +290,7 @@ function categoryFiltersForText(rawText) {
   if (
     !isFood &&
     !isHotel &&
+    !isCommerce &&
     hasAnyKeyword(text, [
       'temple',
       'museum',
@@ -296,7 +310,7 @@ function categoryFiltersForText(rawText) {
   return [...categories];
 }
 
-function normalizeTatPlace(place) {
+function normalizeTatPlace(place, { forFirestore = true } = {}) {
   const tatId = firstString(place, [
     'placeId',
     'id',
@@ -350,10 +364,12 @@ function normalizeTatPlace(place) {
     longitude: firstNumber(place, ['longitude', 'lng', 'lon', 'location.longitude']),
     imageUrl: firstImageUrl(place),
     source: 'TAT',
-    lastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastSyncedAt: forFirestore
+      ? admin.firestore.FieldValue.serverTimestamp()
+      : new Date().toISOString(),
     isActive: true,
     randomKey: Math.random(),
-    raw: place,
+    ...(forFirestore ? { raw: place } : {}),
   };
 }
 
@@ -572,6 +588,15 @@ async function fetchCachedPlaces({
   category,
   categoryFilter,
 } = {}) {
+  const filePayload = fetchFileCachedPlaces({
+    limit,
+    province,
+    region,
+    category,
+    categoryFilter,
+  });
+  if (filePayload) return filePayload;
+
   const db = getFirestore();
   const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 50000));
   let query = db.collection('places').where('isActive', '==', true);
@@ -597,6 +622,77 @@ async function fetchCachedPlaces({
     },
     source: 'firestore',
     cachedAt: new Date().toISOString(),
+  };
+}
+
+function getPlacesFileCache() {
+  if (placesFileCache) return placesFileCache;
+
+  const cachePath = env.PLACES_CACHE_PATH || './data/places-cache.json';
+  try {
+    const payload = JSON.parse(readFileSync(new URL(cachePath, import.meta.url), 'utf8'));
+    const data = Array.isArray(payload?.data) ? payload.data : [];
+    placesFileCache = {
+      data: data.filter((place) => place?.isActive !== false),
+      total: Number(payload?.pagination?.total || data.length || knownPlacesTotal),
+      cachedAt: payload?.cachedAt || null,
+    };
+    console.log(`Loaded ${placesFileCache.data.length} places from ${cachePath}`);
+  } catch (error) {
+    console.warn(`Places file cache unavailable at ${cachePath}`, error);
+    placesFileCache = { data: [], total: 0, cachedAt: null };
+  }
+
+  return placesFileCache;
+}
+
+function filterFilePlaces({ province, region, category, categoryFilter } = {}) {
+  const cache = getPlacesFileCache();
+  let places = cache.data;
+
+  if (province) places = places.filter((place) => place.province === province);
+  if (region) places = places.filter((place) => place.region === region);
+  if (category) places = places.filter((place) => place.category === category);
+  if (categoryFilter) {
+    places = places.filter((place) =>
+      Array.isArray(place.categoryFilters) &&
+      place.categoryFilters.includes(categoryFilter),
+    );
+  }
+
+  return { places, total: cache.total, cachedAt: cache.cachedAt };
+}
+
+function fetchFileCachedPlaces({
+  limit = 100,
+  province,
+  region,
+  category,
+  categoryFilter,
+} = {}) {
+  const cache = getPlacesFileCache();
+  if (cache.data.length === 0) return null;
+
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 50000));
+  const { places, total, cachedAt } = filterFilePlaces({
+    province,
+    region,
+    category,
+    categoryFilter,
+  });
+  const data = places.slice(0, safeLimit).map((place) => publicPlace(place));
+  const hasFilter = Boolean(province || region || category || categoryFilter);
+
+  return {
+    data,
+    pagination: {
+      pageNumber: 1,
+      pageSize: safeLimit,
+      total: hasFilter ? places.length : Math.max(total, data.length),
+      returned: data.length,
+    },
+    source: 'file-cache',
+    cachedAt: cachedAt || new Date().toISOString(),
   };
 }
 
@@ -641,12 +737,31 @@ async function handleCachedPlaces(request, response) {
 
 async function handleRandomCachedPlace(request, response) {
   try {
-    const db = getFirestore();
     const url = new URL(request.url, `http://127.0.0.1:${port}`);
     const province = url.searchParams.get('province');
     const region = url.searchParams.get('region');
     const category = url.searchParams.get('category');
     const categoryFilter = url.searchParams.get('categoryFilter');
+    const fileCache = getPlacesFileCache();
+
+    if (fileCache.data.length > 0) {
+      const { places } = filterFilePlaces({
+        province,
+        region,
+        category,
+        categoryFilter,
+      });
+      if (places.length === 0) {
+        sendJson(response, 404, { error: 'No active places found' });
+        return;
+      }
+
+      const place = places[Math.floor(Math.random() * places.length)];
+      sendJson(response, 200, { data: publicPlace(place), source: 'file-cache' });
+      return;
+    }
+
+    const db = getFirestore();
     const seed = Math.random();
     let snapshot;
 
@@ -698,6 +813,17 @@ async function handleRandomCachedPlace(request, response) {
 
 async function handleCachedPlaceDetail(request, response, tatId) {
   try {
+    const fileCache = getPlacesFileCache();
+    if (fileCache.data.length > 0) {
+      const place = fileCache.data.find((item) => item.tatId === tatId);
+      if (!place) {
+        sendJson(response, 404, { error: 'Place not found' });
+        return;
+      }
+      sendJson(response, 200, { data: publicPlace(place), source: 'file-cache' });
+      return;
+    }
+
     const doc = await getFirestore().collection('places').doc(tatId).get();
     if (!doc.exists) {
       sendJson(response, 404, { error: 'Place not found' });

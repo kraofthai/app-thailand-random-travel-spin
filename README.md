@@ -83,11 +83,19 @@ curl "https://teawnaid-tat-proxy.onrender.com/places/random?region=ภาคเ�
 curl "https://teawnaid-tat-proxy.onrender.com/places/6513"
 ```
 
-The existing Flutter endpoint `/api/places/all` remains available. It reads from
-Firestore first and falls back to TAT only when the cache is empty or refreshed.
+The Render backend ships with `data/places-cache.json` and serves places from
+memory first. This avoids Firestore read quota for public place browsing. The
+existing Flutter endpoint `/api/places/all` remains available and uses the same
+file cache before falling back to Firestore/TAT.
+
+To refresh the bundled place cache from TAT:
+
+```bash
+npm run build:places-cache
+```
+
 The app loads a small `/places?limit=120` preview for the opening animation, then
-uses `/places/random` so the real random result comes from the full Firestore
-cache.
+uses `/places/random` so the real random result comes from the full file cache.
 
 ### Google Sign-In for Play Testing
 
