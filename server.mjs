@@ -12,6 +12,85 @@ let allPlacesCache = null;
 let allPlacesCachePromise = null;
 let firestore = null;
 
+const provinceToRegion = {
+  เชียงใหม่: 'ภาคเหนือ',
+  เชียงราย: 'ภาคเหนือ',
+  แม่ฮ่องสอน: 'ภาคเหนือ',
+  ลำพูน: 'ภาคเหนือ',
+  ลำปาง: 'ภาคเหนือ',
+  แพร่: 'ภาคเหนือ',
+  น่าน: 'ภาคเหนือ',
+  พะเยา: 'ภาคเหนือ',
+  อุตรดิตถ์: 'ภาคเหนือ',
+  ตาก: 'ภาคเหนือ',
+  สุโขทัย: 'ภาคเหนือ',
+  พิษณุโลก: 'ภาคเหนือ',
+  พิจิตร: 'ภาคเหนือ',
+  กำแพงเพชร: 'ภาคเหนือ',
+  เพชรบูรณ์: 'ภาคเหนือ',
+  กรุงเทพมหานคร: 'ภาคกลาง',
+  พระนครศรีอยุธยา: 'ภาคกลาง',
+  นนทบุรี: 'ภาคกลาง',
+  ปทุมธานี: 'ภาคกลาง',
+  สมุทรปราการ: 'ภาคกลาง',
+  นครปฐม: 'ภาคกลาง',
+  สมุทรสาคร: 'ภาคกลาง',
+  สมุทรสงคราม: 'ภาคกลาง',
+  สระบุรี: 'ภาคกลาง',
+  ลพบุรี: 'ภาคกลาง',
+  สิงห์บุรี: 'ภาคกลาง',
+  ชัยนาท: 'ภาคกลาง',
+  อ่างทอง: 'ภาคกลาง',
+  นครสวรรค์: 'ภาคกลาง',
+  อุทัยธานี: 'ภาคกลาง',
+  สุพรรณบุรี: 'ภาคกลาง',
+  อุบลราชธานี: 'ภาคอีสาน',
+  เลย: 'ภาคอีสาน',
+  บุรีรัมย์: 'ภาคอีสาน',
+  ขอนแก่น: 'ภาคอีสาน',
+  อุดรธานี: 'ภาคอีสาน',
+  หนองคาย: 'ภาคอีสาน',
+  บึงกาฬ: 'ภาคอีสาน',
+  หนองบัวลำภู: 'ภาคอีสาน',
+  สกลนคร: 'ภาคอีสาน',
+  นครพนม: 'ภาคอีสาน',
+  มุกดาหาร: 'ภาคอีสาน',
+  กาฬสินธุ์: 'ภาคอีสาน',
+  ร้อยเอ็ด: 'ภาคอีสาน',
+  มหาสารคาม: 'ภาคอีสาน',
+  ยโสธร: 'ภาคอีสาน',
+  อำนาจเจริญ: 'ภาคอีสาน',
+  ศรีสะเกษ: 'ภาคอีสาน',
+  สุรินทร์: 'ภาคอีสาน',
+  ชัยภูมิ: 'ภาคอีสาน',
+  นครราชสีมา: 'ภาคตะวันออก',
+  ระยอง: 'ภาคตะวันออก',
+  ชลบุรี: 'ภาคตะวันออก',
+  ฉะเชิงเทรา: 'ภาคตะวันออก',
+  ปราจีนบุรี: 'ภาคตะวันออก',
+  สระแก้ว: 'ภาคตะวันออก',
+  จันทบุรี: 'ภาคตะวันออก',
+  ตราด: 'ภาคตะวันออก',
+  สุราษฎร์ธานี: 'ภาคใต้',
+  ภูเก็ต: 'ภาคใต้',
+  สตูล: 'ภาคใต้',
+  ชุมพร: 'ภาคใต้',
+  ระนอง: 'ภาคใต้',
+  พังงา: 'ภาคใต้',
+  กระบี่: 'ภาคใต้',
+  นครศรีธรรมราช: 'ภาคใต้',
+  ตรัง: 'ภาคใต้',
+  พัทลุง: 'ภาคใต้',
+  สงขลา: 'ภาคใต้',
+  ปัตตานี: 'ภาคใต้',
+  ยะลา: 'ภาคใต้',
+  นราธิวาส: 'ภาคใต้',
+  กาญจนบุรี: 'ภาคตะวันตก',
+  ประจวบคีรีขันธ์: 'ภาคตะวันตก',
+  ราชบุรี: 'ภาคตะวันตก',
+  เพชรบุรี: 'ภาคตะวันตก',
+};
+
 function loadEnv() {
   const values = {};
 
@@ -37,7 +116,7 @@ function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, x-admin-token',
     'Content-Type': 'application/json; charset=utf-8',
   });
   response.end(JSON.stringify(payload));
@@ -137,6 +216,85 @@ function firstImageUrl(source) {
   return null;
 }
 
+function hasAnyKeyword(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function categoryFiltersForText(rawText) {
+  const text = rawText.toLowerCase();
+  const categories = new Set();
+  const isFood = hasAnyKeyword(text, [
+    'restaurant',
+    'cafe',
+    'coffee',
+    'bakery',
+    'food',
+    'ร้านอาหาร',
+    'กาแฟ',
+    'คาเฟ่',
+    'เบเกอรี่',
+  ]);
+  const isHotel = hasAnyKeyword(text, [
+    'hotel',
+    'resort',
+    'hostel',
+    'villa',
+    'โรงแรม',
+    'รีสอร์ต',
+    'ที่พัก',
+  ]);
+
+  if (isFood) categories.add('food');
+  if (isHotel) categories.add('hotelResort');
+  if (
+    !isFood &&
+    !isHotel &&
+    hasAnyKeyword(text, [
+      'nature',
+      'park',
+      'forest',
+      'waterfall',
+      'mountain',
+      'beach',
+      'island',
+      'sea',
+      'river',
+      'lake',
+      'ธรรมชาติ',
+      'อุทยาน',
+      'ป่า',
+      'น้ำตก',
+      'ภูเขา',
+      'หาด',
+      'เกาะ',
+      'ทะเล',
+      'แม่น้ำ',
+    ])
+  ) {
+    categories.add('nature');
+  }
+  if (
+    !isFood &&
+    !isHotel &&
+    hasAnyKeyword(text, [
+      'temple',
+      'museum',
+      'palace',
+      'building',
+      'วัด',
+      'พิพิธภัณฑ์',
+      'พระราชวัง',
+      'โบราณสถาน',
+      'อาคาร',
+    ])
+  ) {
+    categories.add('building');
+  }
+
+  if (categories.size === 0) categories.add('other');
+  return [...categories];
+}
+
 function normalizeTatPlace(place) {
   const tatId = firstString(place, [
     'placeId',
@@ -147,33 +305,46 @@ function normalizeTatPlace(place) {
 
   if (!tatId) return null;
 
+  const province =
+    firstString(place, [
+      'province',
+      'province.name',
+      'location.province.name',
+      'location.province',
+    ]) || 'Thailand';
+  const category =
+    firstString(place, [
+      'category.name',
+      'category',
+      'sha.category.name',
+      'sha.type.name',
+      'type.name',
+    ]) || 'อื่นๆ';
+  const description =
+    firstString(place, [
+      'description',
+      'introduction',
+      'detail',
+      'sha.detail',
+    ]) || '';
+  const filterText = [
+    firstString(place, ['name', 'sha.name', 'title', 'place_name']) || '',
+    province,
+    category,
+    description,
+    JSON.stringify(place),
+  ].join(' ');
+
   return {
     tatId,
     name:
       firstString(place, ['name', 'sha.name', 'title', 'place_name']) ||
       'ไม่ทราบชื่อ',
-    province:
-      firstString(place, [
-        'province',
-        'province.name',
-        'location.province.name',
-        'location.province',
-      ]) || 'Thailand',
-    category:
-      firstString(place, [
-        'category.name',
-        'category',
-        'sha.category.name',
-        'sha.type.name',
-        'type.name',
-      ]) || 'อื่นๆ',
-    description:
-      firstString(place, [
-        'description',
-        'introduction',
-        'detail',
-        'sha.detail',
-      ]) || '',
+    province,
+    region: provinceToRegion[province] || 'จาก API',
+    category,
+    categoryFilters: categoryFiltersForText(filterText),
+    description,
     latitude: firstNumber(place, ['latitude', 'lat', 'location.latitude']),
     longitude: firstNumber(place, ['longitude', 'lng', 'lon', 'location.longitude']),
     imageUrl: firstImageUrl(place),
@@ -363,7 +534,9 @@ async function handleAllPlaces(request, response) {
       const cachedPayload = await fetchCachedPlaces({
         limit: Number(incoming.searchParams.get('limit') || 50000),
         province: incoming.searchParams.get('province'),
+        region: incoming.searchParams.get('region'),
         category: incoming.searchParams.get('category'),
+        categoryFilter: incoming.searchParams.get('categoryFilter'),
       });
       if (cachedPayload.data.length > 0) {
         sendJson(response, 200, cachedPayload);
@@ -391,27 +564,68 @@ async function handleAllPlaces(request, response) {
   }
 }
 
-async function fetchCachedPlaces({ limit = 100, province, category } = {}) {
+async function fetchCachedPlaces({
+  limit = 100,
+  province,
+  region,
+  category,
+  categoryFilter,
+} = {}) {
   const db = getFirestore();
   const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 50000));
   let query = db.collection('places').where('isActive', '==', true);
 
   if (province) query = query.where('province', '==', province);
+  if (region) query = query.where('region', '==', region);
+  if (categoryFilter) {
+    query = query.where('categoryFilters', 'array-contains', categoryFilter);
+  }
   if (category) query = query.where('category', '==', category);
-  query = query.limit(safeLimit);
 
-  const snapshot = await query.get();
-  const data = snapshot.docs.map((doc) => doc.data());
+  const total = await countCachedPlaces(query);
+  const snapshot = await query.limit(safeLimit).get();
+  const data = snapshot.docs.map((doc) => publicPlace(doc.data()));
 
   return {
     data,
     pagination: {
       pageNumber: 1,
       pageSize: safeLimit,
-      total: data.length,
+      total: total ?? data.length,
+      returned: data.length,
     },
     source: 'firestore',
     cachedAt: new Date().toISOString(),
+  };
+}
+
+async function countCachedPlaces(query) {
+  try {
+    const snapshot = await query.count().get();
+    const count = snapshot.data().count;
+    return Number.isFinite(count) ? count : null;
+  } catch (error) {
+    console.warn('Unable to count cached places; returning page count only', error);
+    return null;
+  }
+}
+
+function publicPlace(place) {
+  if (!place) return place;
+  return {
+    tatId: place.tatId,
+    name: place.name,
+    province: place.province,
+    region: place.region,
+    category: place.category,
+    categoryFilters: place.categoryFilters || [],
+    description: place.description || '',
+    latitude: place.latitude ?? null,
+    longitude: place.longitude ?? null,
+    imageUrl: place.imageUrl || null,
+    source: place.source || 'TAT',
+    isActive: place.isActive !== false,
+    lastSyncedAt: place.lastSyncedAt || null,
   };
 }
 
@@ -421,7 +635,9 @@ async function handleCachedPlaces(request, response) {
     const payload = await fetchCachedPlaces({
       limit: url.searchParams.get('limit') || env.TAT_API_DEFAULT_LIMIT || 20,
       province: url.searchParams.get('province'),
+      region: url.searchParams.get('region'),
       category: url.searchParams.get('category'),
+      categoryFilter: url.searchParams.get('categoryFilter'),
     });
     sendJson(response, 200, payload);
   } catch (error) {
@@ -436,33 +652,41 @@ async function handleCachedPlaces(request, response) {
 async function handleRandomCachedPlace(request, response) {
   try {
     const db = getFirestore();
+    const url = new URL(request.url, `http://127.0.0.1:${port}`);
+    const province = url.searchParams.get('province');
+    const region = url.searchParams.get('region');
+    const category = url.searchParams.get('category');
+    const categoryFilter = url.searchParams.get('categoryFilter');
     const seed = Math.random();
     let snapshot;
 
+    function filteredQuery() {
+      let query = db.collection('places').where('isActive', '==', true);
+      if (province) query = query.where('province', '==', province);
+      if (region) query = query.where('region', '==', region);
+      if (categoryFilter) {
+        query = query.where('categoryFilters', 'array-contains', categoryFilter);
+      }
+      if (category) query = query.where('category', '==', category);
+      return query;
+    }
+
     try {
-      snapshot = await db
-        .collection('places')
-        .where('isActive', '==', true)
+      snapshot = await filteredQuery()
         .where('randomKey', '>=', seed)
         .orderBy('randomKey')
         .limit(1)
         .get();
 
       if (snapshot.empty) {
-        snapshot = await db
-          .collection('places')
-          .where('isActive', '==', true)
+        snapshot = await filteredQuery()
           .orderBy('randomKey')
           .limit(1)
           .get();
       }
     } catch (indexError) {
       console.warn('Random indexed query failed; falling back to sampled query', indexError);
-      snapshot = await db
-        .collection('places')
-        .where('isActive', '==', true)
-        .limit(1000)
-        .get();
+      snapshot = await filteredQuery().limit(1000).get();
     }
 
     if (snapshot.empty) {
@@ -472,7 +696,7 @@ async function handleRandomCachedPlace(request, response) {
 
     const docs = snapshot.docs;
     const doc = docs.length === 1 ? docs[0] : docs[Math.floor(Math.random() * docs.length)];
-    sendJson(response, 200, { data: doc.data(), source: 'firestore' });
+    sendJson(response, 200, { data: publicPlace(doc.data()), source: 'firestore' });
   } catch (error) {
     console.error('Unable to read random cached place', error);
     sendJson(response, 500, {
@@ -489,7 +713,7 @@ async function handleCachedPlaceDetail(request, response, tatId) {
       sendJson(response, 404, { error: 'Place not found' });
       return;
     }
-    sendJson(response, 200, { data: doc.data(), source: 'firestore' });
+    sendJson(response, 200, { data: publicPlace(doc.data()), source: 'firestore' });
   } catch (error) {
     console.error(`Unable to read cached place ${tatId}`, error);
     sendJson(response, 500, {

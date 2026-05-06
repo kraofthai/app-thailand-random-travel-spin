@@ -77,13 +77,25 @@ curl -X POST \
 curl "https://teawnaid-tat-proxy.onrender.com/health"
 curl "https://teawnaid-tat-proxy.onrender.com/places?limit=20"
 curl "https://teawnaid-tat-proxy.onrender.com/places?province=เชียงใหม่&limit=20"
-curl "https://teawnaid-tat-proxy.onrender.com/places?category=สถานที่ท่องเที่ยว&limit=20"
+curl "https://teawnaid-tat-proxy.onrender.com/places?categoryFilter=nature&limit=20"
 curl "https://teawnaid-tat-proxy.onrender.com/places/random"
+curl "https://teawnaid-tat-proxy.onrender.com/places/random?region=ภาคเหนือ"
 curl "https://teawnaid-tat-proxy.onrender.com/places/6513"
 ```
 
 The existing Flutter endpoint `/api/places/all` remains available. It reads from
 Firestore first and falls back to TAT only when the cache is empty or refreshed.
+The app loads a small `/places?limit=120` preview for the opening animation, then
+uses `/places/random` so the real random result comes from the full Firestore
+cache.
+
+### Google Sign-In for Play Testing
+
+For Google Play internal testing, add the Play App Signing SHA certificates to
+Firebase. Open Play Console > App integrity > App signing key certificate, copy
+SHA-1 and SHA-256, then add them to the Firebase Android app
+`com.teawnaid.app`. Download the updated `google-services.json`, rebuild the
+AAB, and upload a new test release.
 
 ## TAT Live API Backend
 

@@ -69,6 +69,7 @@ class LandingGateway extends StatefulWidget {
 class _LandingGatewayState extends State<LandingGateway> {
   final _placesClient = const PlacesApiClient();
   List<TravelDestination>? _loadedPlaces;
+  int? _loadedTotalPlaces;
   String _status = 'กำลังโหลดข้อมูลสถานที่จาก TAT API';
   bool _ready = false;
   bool _navigated = false;
@@ -81,11 +82,12 @@ class _LandingGatewayState extends State<LandingGateway> {
 
   Future<void> _loadThenEnter() async {
     try {
-      final places = await _placesClient.fetchPlaces();
+      final preview = await _placesClient.fetchPreviewBatch(limit: 120);
       if (!mounted) return;
       setState(() {
-        _loadedPlaces = places;
-        _status = 'โหลดข้อมูลแล้ว ${places.length} สถานที่';
+        _loadedPlaces = preview.places;
+        _loadedTotalPlaces = preview.total;
+        _status = 'พร้อมสุ่มจากฐานข้อมูล TAT';
         _ready = true;
       });
     } catch (_) {
@@ -110,6 +112,7 @@ class _LandingGatewayState extends State<LandingGateway> {
         builder:
             (context) => TravelSpinPage(
               initialDestinations: _loadedPlaces,
+              initialTotalPlaces: _loadedTotalPlaces,
               initialSourceLabel: _status,
               adsEnabled: widget.adsEnabled,
             ),
@@ -220,6 +223,13 @@ class TravelDestination {
   final Set<PlaceCategoryFilter> categoryFilters;
   final double? latitude;
   final double? longitude;
+}
+
+class PlacesPreview {
+  const PlacesPreview({required this.places, required this.total});
+
+  final List<TravelDestination> places;
+  final int total;
 }
 
 class TravelUser {
@@ -500,13 +510,24 @@ class PlacesApiClient {
   final String baseUrl;
 
   Future<List<TravelDestination>> fetchPlaces() async {
+    return fetchPreviewPlaces(limit: 120);
+  }
+
+  Future<List<TravelDestination>> fetchPreviewPlaces({int limit = 120}) async {
+    final preview = await fetchPreviewBatch(limit: limit);
+    return preview.places;
+  }
+
+  Future<PlacesPreview> fetchPreviewBatch({int limit = 120}) async {
     final normalizedBaseUrl = baseUrl.trim();
     if (normalizedBaseUrl.isEmpty) {
       throw StateError('ยังไม่ได้ตั้งค่า PLACES_API_BASE_URL');
     }
 
-    final uri = Uri.parse('$normalizedBaseUrl/api/places/all');
-    final response = await http.get(uri).timeout(const Duration(minutes: 4));
+    final uri = Uri.parse(
+      '$normalizedBaseUrl/places',
+    ).replace(queryParameters: {'limit': '$limit'});
+    final response = await http.get(uri).timeout(const Duration(seconds: 18));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Places API returned ${response.statusCode}');
@@ -521,7 +542,63 @@ class PlacesApiClient {
       throw Exception('Places API returned no usable places');
     }
 
-    return places;
+    return PlacesPreview(
+      total: _extractTotal(decoded) ?? places.length,
+      places: places,
+    );
+  }
+
+  Future<TravelDestination> fetchRandomPlace({
+    PlaceCategoryFilter category = PlaceCategoryFilter.all,
+    SpinMode mode = SpinMode.all,
+    String? region,
+    String? province,
+  }) async {
+    final normalizedBaseUrl = baseUrl.trim();
+    if (normalizedBaseUrl.isEmpty) {
+      throw StateError('ยังไม่ได้ตั้งค่า PLACES_API_BASE_URL');
+    }
+
+    final query = <String, String>{};
+    final categoryKey = _categoryFilterApiKey(category);
+    if (categoryKey != null) query['categoryFilter'] = categoryKey;
+    if (mode == SpinMode.region && region != null && region.isNotEmpty) {
+      query['region'] = region;
+    }
+    if (mode == SpinMode.province && province != null && province.isNotEmpty) {
+      query['province'] = province;
+    }
+
+    final uri = Uri.parse(
+      '$normalizedBaseUrl/places/random',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+    final response = await http.get(uri).timeout(const Duration(seconds: 18));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Random places API returned ${response.statusCode}');
+    }
+
+    final decoded = jsonDecode(response.body);
+    final item =
+        decoded is Map<String, dynamic> && decoded['data'] != null
+            ? decoded['data']
+            : decoded;
+    final place = _destinationFromJson(item);
+    if (place == null) {
+      throw Exception('Random places API returned no usable place');
+    }
+    return place;
+  }
+
+  String? _categoryFilterApiKey(PlaceCategoryFilter category) {
+    return switch (category) {
+      PlaceCategoryFilter.all => null,
+      PlaceCategoryFilter.nature => 'nature',
+      PlaceCategoryFilter.building => 'building',
+      PlaceCategoryFilter.food => 'food',
+      PlaceCategoryFilter.hotelResort => 'hotelResort',
+      PlaceCategoryFilter.other => 'other',
+    };
   }
 
   List<dynamic> _extractItems(dynamic decoded) {
@@ -538,6 +615,25 @@ class PlacesApiClient {
     }
 
     return const [];
+  }
+
+  int? _extractTotal(dynamic decoded) {
+    if (decoded is! Map<String, dynamic>) return null;
+    final pagination = decoded['pagination'];
+    if (pagination is Map<String, dynamic>) {
+      final total = pagination['total'];
+      if (total is int) return total;
+      if (total is num) return total.toInt();
+      if (total is String) return int.tryParse(total);
+    }
+
+    for (final key in ['total', 'count', 'totalCount']) {
+      final value = decoded[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value);
+    }
+    return null;
   }
 
   TravelDestination? _destinationFromJson(dynamic item) {
@@ -1312,11 +1408,13 @@ class TravelSpinPage extends StatefulWidget {
   const TravelSpinPage({
     super.key,
     this.initialDestinations,
+    this.initialTotalPlaces,
     this.initialSourceLabel,
     this.adsEnabled = true,
   });
 
   final List<TravelDestination>? initialDestinations;
+  final int? initialTotalPlaces;
   final String? initialSourceLabel;
   final bool adsEnabled;
 
@@ -1364,6 +1462,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   bool _isRandomizing = false;
   bool _isLoadingPlaces = true;
   String _placesSourceLabel = 'กำลังโหลดสถานที่ทั้งหมดจาก TAT API';
+  int _totalPlaces = destinations.length;
 
   int get _availableSpins => _dailySpinsLeft + _bonusSpins;
 
@@ -1422,6 +1521,10 @@ class _TravelSpinPageState extends State<TravelSpinPage>
       _destinations = initial;
       _selected = initial.first;
       _isLoadingPlaces = false;
+      _totalPlaces = max(
+        widget.initialTotalPlaces ?? initial.length,
+        initial.length,
+      );
       _placesSourceLabel = widget.initialSourceLabel ?? 'โหลดข้อมูลเรียบร้อย';
     }
     _selectedRegion = _regions.first;
@@ -1465,7 +1568,12 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   Future<void> _randomizeTrip() async {
     if (_isRandomizing) return;
 
-    final pool = _pool;
+    final pool =
+        _pool.isNotEmpty
+            ? _pool
+            : _eligibleDestinations.isNotEmpty
+            ? _eligibleDestinations
+            : _destinations;
     if (pool.isEmpty) return;
     if (_availableSpins <= 0) {
       _showSnack('Daily spin หมดแล้ว กดรับ spin เพิ่มได้');
@@ -1489,7 +1597,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     _shuffleController.stop();
     await _shuffleController.forward(from: 0);
 
-    final next = pool[_random.nextInt(pool.length)];
+    final next = await _nextRandomDestination(pool);
     _ChallengeSpec? completedChallenge;
     setState(() {
       _selected = next;
@@ -1534,6 +1642,37 @@ class _TravelSpinPageState extends State<TravelSpinPage>
             ),
       ),
     );
+  }
+
+  Future<TravelDestination> _nextRandomDestination(
+    List<TravelDestination> fallbackPool,
+  ) async {
+    if (_nearbyMode) {
+      return fallbackPool[_random.nextInt(fallbackPool.length)];
+    }
+
+    try {
+      return await _placesClient.fetchRandomPlace(
+        category: _effectiveRandomCategory(),
+        mode: _mode,
+        region: _selectedRegion,
+        province: _selectedProvince,
+      );
+    } catch (_) {
+      return fallbackPool[_random.nextInt(fallbackPool.length)];
+    }
+  }
+
+  PlaceCategoryFilter _effectiveRandomCategory() {
+    if (_categoryFilter != PlaceCategoryFilter.all) return _categoryFilter;
+    if (!_smartMode) return PlaceCategoryFilter.all;
+
+    final hour = DateTime.now().hour;
+    return hour < 11
+        ? PlaceCategoryFilter.nature
+        : hour < 17
+        ? PlaceCategoryFilter.food
+        : PlaceCategoryFilter.building;
   }
 
   void _changeMode(SpinMode mode) {
@@ -2665,17 +2804,18 @@ class _TravelSpinPageState extends State<TravelSpinPage>
 
   Future<void> _loadPlaces() async {
     try {
-      final places = await _placesClient.fetchPlaces();
+      final preview = await _placesClient.fetchPreviewBatch(limit: 120);
       if (!mounted) return;
       setState(() {
-        _destinations = places;
+        _destinations = preview.places;
+        _totalPlaces = max(preview.total, preview.places.length);
         _eligibleCacheCategory = null;
         _eligibleCache = null;
         if (_regions.isNotEmpty) _selectedRegion = _regions.first;
         if (_provinces.isNotEmpty) _selectedProvince = _provinces.first;
         _syncSelectionWithPool();
         _isLoadingPlaces = false;
-        _placesSourceLabel = 'ใช้ข้อมูลทั้งหมดจาก TAT API';
+        _placesSourceLabel = 'โหลดตัวอย่างแล้ว • สุ่มจากฐานข้อมูลทั้งหมด';
       });
     } catch (_) {
       if (!mounted) return;
@@ -2728,6 +2868,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
           child: _HomeMapSpinHero(
             selected: _selected,
             enabledCount: _pool.length,
+            totalCount: _totalPlaces,
             remainingSpins: _availableSpins,
             progress: _shuffleController,
             isRandomizing: _isRandomizing,
@@ -2763,7 +2904,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: _CategoryFilterPanel(
               selected: _categoryFilter,
-              totalCount: _destinations.length,
+              totalCount: _totalPlaces,
               selectedCount: _eligibleDestinations.length,
               onChanged: (value) {
                 setState(() {
@@ -3155,6 +3296,7 @@ class _HomeMapSpinHero extends StatelessWidget {
   const _HomeMapSpinHero({
     required this.selected,
     required this.enabledCount,
+    required this.totalCount,
     required this.remainingSpins,
     required this.progress,
     required this.isRandomizing,
@@ -3166,6 +3308,7 @@ class _HomeMapSpinHero extends StatelessWidget {
 
   final TravelDestination selected;
   final int enabledCount;
+  final int totalCount;
   final int remainingSpins;
   final Animation<double> progress;
   final bool isRandomizing;
@@ -3314,7 +3457,7 @@ class _HomeMapSpinHero extends StatelessWidget {
                   Text(
                     enabledCount == 0
                         ? 'ไม่มีตัวเลือกในเงื่อนไขนี้'
-                        : '$enabledCount ตัวเลือก • เหลือ $remainingSpins spin',
+                        : '${max(totalCount, enabledCount)} ตัวเลือกทั่วไทย • เหลือ $remainingSpins spin',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: _ink,
