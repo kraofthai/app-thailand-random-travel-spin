@@ -1579,6 +1579,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   bool _authReady = false;
   final Set<String> _challengeProvinceKeys = {};
   final Set<String> _savedPlaceKeys = {};
+  final Set<String> _savePointAwardedKeys = {};
   final Set<String> _badgeNames = {};
   final List<String> _historyKeys = [];
   final Map<String, TravelDestination> _knownPlaces = {};
@@ -1703,6 +1704,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
       _authReady = true;
     });
     if (user != null) {
+      await _loadUserAwardState(user);
       await _awardDailyLoginPoints();
       await _syncAccountStats();
     }
@@ -1970,6 +1972,9 @@ class _TravelSpinPageState extends State<TravelSpinPage>
       _savedPlaceKeys
         ..clear()
         ..addAll(prefs.getStringList('savedPlaces') ?? const []);
+      _savePointAwardedKeys
+        ..clear()
+        ..addAll(prefs.getStringList('savePointAwarded_guest') ?? const []);
       _badgeNames
         ..clear()
         ..addAll(prefs.getStringList('badges') ?? const []);
@@ -1978,6 +1983,23 @@ class _TravelSpinPageState extends State<TravelSpinPage>
         ..addAll(prefs.getStringList('history') ?? const []);
     });
     await _saveGameState();
+  }
+
+  String _savePointAwardedPrefsKey([TravelUser? user]) {
+    final targetUser = user ?? _travelUser;
+    return 'savePointAwarded_${targetUser?.uid ?? 'guest'}';
+  }
+
+  Future<void> _loadUserAwardState(TravelUser user) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _savePointAwardedKeys
+        ..clear()
+        ..addAll(
+          prefs.getStringList(_savePointAwardedPrefsKey(user)) ?? const [],
+        );
+    });
   }
 
   List<TravelDestination> _storedKnownPlaces(SharedPreferences prefs) {
@@ -2010,6 +2032,10 @@ class _TravelSpinPageState extends State<TravelSpinPage>
       _challengeProvinceKeys.toList(),
     );
     await prefs.setStringList('savedPlaces', _savedPlaceKeys.toList());
+    await prefs.setStringList(
+      _savePointAwardedPrefsKey(),
+      _savePointAwardedKeys.toList(),
+    );
     await prefs.setStringList('badges', _badgeNames.toList());
     await prefs.setStringList('history', _historyKeys);
     final keysToPersist = {..._savedPlaceKeys, ..._historyKeys};
@@ -2123,6 +2149,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
                       if (!mounted || !context.mounted) return;
                       setState(() => _travelUser = user);
                       Navigator.of(context).pop();
+                      await _loadUserAwardState(user);
                       await _awardDailyLoginPoints();
                       await _syncAccountStats();
                     } catch (error) {
@@ -2142,6 +2169,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
                       if (!mounted || !context.mounted) return;
                       setState(() => _travelUser = user);
                       Navigator.of(context).pop();
+                      await _loadUserAwardState(user);
                       await _awardDailyLoginPoints();
                       await _syncAccountStats();
                     } catch (error) {
@@ -2160,6 +2188,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
                     if (!mounted || !context.mounted) return;
                     setState(() => _travelUser = user);
                     Navigator.of(context).pop();
+                    await _loadUserAwardState(user);
                     await _awardDailyLoginPoints();
                   },
                 ),
@@ -2255,17 +2284,19 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     _rememberPlace(place);
     final key = _placeKey(place);
     var added = false;
+    var shouldAwardSavePoint = false;
     setState(() {
       if (_savedPlaceKeys.contains(key)) {
         _savedPlaceKeys.remove(key);
       } else {
         _savedPlaceKeys.add(key);
         added = true;
+        shouldAwardSavePoint = _savePointAwardedKeys.add(key);
         _badgeNames.add('นักสะสมทริป');
       }
     });
     unawaited(_saveGameState());
-    if (added) {
+    if (added && shouldAwardSavePoint) {
       unawaited(
         _awardPoints(
           type: 'save_place',
@@ -2274,6 +2305,9 @@ class _TravelSpinPageState extends State<TravelSpinPage>
           silent: true,
         ),
       );
+    } else if (added) {
+      _showSnack('บันทึกทริปแล้ว • สถานที่นี้เคยได้รับ Point แล้ว');
+      return;
     }
     _showSnack(
       _savedPlaceKeys.contains(key) ? 'บันทึกทริปแล้ว' : 'ลบทริปออกแล้ว',
