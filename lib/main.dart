@@ -151,6 +151,46 @@ const placesApiBaseUrl = String.fromEnvironment(
   defaultValue: '',
 );
 
+const agodaAffiliateBaseUrl = String.fromEnvironment(
+  'AGODA_AFFILIATE_BASE_URL',
+  defaultValue: 'https://www.agoda.com/search',
+);
+
+const agodaPartnerId = String.fromEnvironment(
+  'AGODA_PARTNER_ID',
+  defaultValue: '',
+);
+
+class HotelPartnerConfig {
+  const HotelPartnerConfig._();
+
+  static Uri searchUrlFor(TravelDestination destination) {
+    final base = Uri.parse(agodaAffiliateBaseUrl);
+    final checkIn = DateTime.now().add(const Duration(days: 7));
+    final query = <String, String>{
+      ...base.queryParameters,
+      'text': '${destination.province} hotel near ${destination.name}',
+      'checkIn': _compactDate(checkIn),
+      'los': '1',
+      'rooms': '1',
+      'adults': '2',
+      'children': '0',
+    };
+    if (agodaPartnerId.isNotEmpty) {
+      query.putIfAbsent('cid', () => agodaPartnerId);
+      query.putIfAbsent('tag', () => 'teawnaid_${destination.province}');
+    }
+    return base.replace(queryParameters: query);
+  }
+
+  static String _compactDate(DateTime date) {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+}
+
 class AdMobConfig {
   const AdMobConfig._();
 
@@ -7388,6 +7428,18 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     }
   }
 
+  Future<void> _openNearbyHotels() async {
+    final uri = HotelPartnerConfig.searchUrlFor(destination);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!await launchUrl(uri)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('เปิดหน้าจองที่พักไม่สำเร็จ')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final style = _detailStyle(destination);
@@ -7471,6 +7523,26 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                         label: const Text('Open Map'),
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF1769FF),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: FilledButton.icon(
+                        onPressed: _openNearbyHotels,
+                        icon: const Icon(Icons.hotel_rounded),
+                        label: const Text('จองที่พักใกล้ๆ'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _brandOrange,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(999),

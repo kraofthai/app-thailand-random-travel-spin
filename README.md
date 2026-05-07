@@ -16,6 +16,21 @@ Build with the Render backend URL:
 flutter build appbundle --release --dart-define=PLACES_API_BASE_URL=https://teawnaid-tat-proxy.onrender.com
 ```
 
+Build with Agoda partner tracking for the Phase 1 hotel booking CTA:
+
+```bash
+flutter build appbundle --release \
+  --dart-define=PLACES_API_BASE_URL=https://teawnaid-tat-proxy.onrender.com \
+  --dart-define=AGODA_PARTNER_ID=YOUR_AGODA_CID
+```
+
+Optional: override the Agoda search base URL if Agoda provides a custom
+affiliate/deep-link base:
+
+```bash
+--dart-define=AGODA_AFFILIATE_BASE_URL=https://www.agoda.com/search
+```
+
 Do not put the TAT API key directly in the mobile app. The app expects a backend
 proxy that exposes `/api/places/all`, `/places`, and `/api/image`.
 
