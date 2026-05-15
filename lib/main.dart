@@ -1627,6 +1627,8 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   int _selectedTab = 0;
   bool _showFilters = false;
   bool _isRandomizing = false;
+  bool _spinCooldownActive = false;
+  Timer? _spinCooldownTimer;
   bool _isLoadingPlaces = true;
   String _placesSourceLabel = 'กำลังโหลดสถานที่ทั้งหมดจาก TAT API';
   int _totalPlaces = destinations.length;
@@ -1729,6 +1731,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
 
   @override
   void dispose() {
+    _spinCooldownTimer?.cancel();
     _interstitialAd?.dispose();
     _shuffleController.dispose();
     super.dispose();
@@ -1751,7 +1754,10 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   Future<void> _randomizeTrip() async {
-    if (_isRandomizing) return;
+    if (_isRandomizing || _spinCooldownActive) {
+      _showSnack('รอสักครู่ก่อนสุ่มครั้งถัดไป');
+      return;
+    }
 
     final pool =
         _pool.isNotEmpty
@@ -1768,6 +1774,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
     setState(() {
       _isRandomizing = true;
     });
+    _startSpinCooldown();
     _shuffleController.repeat();
 
     for (var i = 0; i < 14; i++) {
@@ -1827,6 +1834,15 @@ class _TravelSpinPageState extends State<TravelSpinPage>
             ),
       ),
     );
+  }
+
+  void _startSpinCooldown() {
+    _spinCooldownTimer?.cancel();
+    setState(() => _spinCooldownActive = true);
+    _spinCooldownTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() => _spinCooldownActive = false);
+    });
   }
 
   Future<TravelDestination> _nextRandomDestination(
@@ -3118,6 +3134,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
             remainingSpins: _availableSpins,
             progress: _shuffleController,
             isRandomizing: _isRandomizing,
+            isSpinCoolingDown: _spinCooldownActive,
             onRandomize: _randomizeTrip,
             onRewardSpin: _watchRewardAd,
             onNearby: () => _setNearbyMode(!_nearbyMode),
@@ -3596,6 +3613,7 @@ class _HomeMapSpinHero extends StatelessWidget {
     required this.remainingSpins,
     required this.progress,
     required this.isRandomizing,
+    required this.isSpinCoolingDown,
     required this.onRandomize,
     required this.onRewardSpin,
     required this.onNearby,
@@ -3608,6 +3626,7 @@ class _HomeMapSpinHero extends StatelessWidget {
   final int remainingSpins;
   final Animation<double> progress;
   final bool isRandomizing;
+  final bool isSpinCoolingDown;
   final VoidCallback onRandomize;
   final VoidCallback onRewardSpin;
   final VoidCallback onNearby;
@@ -3742,6 +3761,7 @@ class _HomeMapSpinHero extends StatelessWidget {
                           child: _BigDiceButton(
                             progress: progress,
                             isRandomizing: isRandomizing,
+                            isCoolingDown: isSpinCoolingDown,
                             enabled: enabledCount > 0,
                             onTap: onRandomize,
                           ),
@@ -3822,12 +3842,14 @@ class _BigDiceButton extends StatelessWidget {
   const _BigDiceButton({
     required this.progress,
     required this.isRandomizing,
+    required this.isCoolingDown,
     required this.enabled,
     required this.onTap,
   });
 
   final Animation<double> progress;
   final bool isRandomizing;
+  final bool isCoolingDown;
   final bool enabled;
   final VoidCallback onTap;
 
@@ -3842,7 +3864,7 @@ class _BigDiceButton extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: enabled && !isRandomizing ? onTap : null,
+          onTap: enabled && !isRandomizing && !isCoolingDown ? onTap : null,
           customBorder: const CircleBorder(),
           child: Container(
             width: 150,
@@ -3889,7 +3911,11 @@ class _BigDiceButton extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  isRandomizing ? 'สุ่มอยู่' : 'สุ่มเลย!',
+                  isRandomizing
+                      ? 'สุ่มอยู่'
+                      : isCoolingDown
+                      ? 'รอสักครู่'
+                      : 'สุ่มเลย!',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
