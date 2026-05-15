@@ -1629,6 +1629,8 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   bool _isRandomizing = false;
   bool _spinCooldownActive = false;
   Timer? _spinCooldownTimer;
+  bool _rewardSpinLocked = false;
+  Timer? _rewardSpinLockTimer;
   bool _isLoadingPlaces = true;
   String _placesSourceLabel = 'กำลังโหลดสถานที่ทั้งหมดจาก TAT API';
   int _totalPlaces = destinations.length;
@@ -1732,6 +1734,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   @override
   void dispose() {
     _spinCooldownTimer?.cancel();
+    _rewardSpinLockTimer?.cancel();
     _interstitialAd?.dispose();
     _shuffleController.dispose();
     super.dispose();
@@ -2320,20 +2323,43 @@ class _TravelSpinPageState extends State<TravelSpinPage>
   }
 
   Future<void> _watchRewardAd() async {
-    final allowed = await _ensureLoginFor(
-      'รับ spin เพิ่ม และผูก Spin กับบัญชีของคุณ',
-    );
-    if (!allowed) return;
+    if (_rewardSpinLocked) {
+      _showSnack('กำลังเตรียม spin เพิ่ม รอสักครู่');
+      return;
+    }
 
-    await _showInterstitialAd();
-    if (!mounted) return;
+    _lockRewardSpinButton();
+    try {
+      final allowed = await _ensureLoginFor(
+        'รับ spin เพิ่ม และผูก Spin กับบัญชีของคุณ',
+      );
+      if (!allowed) return;
 
-    setState(() {
-      _bonusSpins += 1;
+      await _showInterstitialAd();
+      if (!mounted) return;
+
+      setState(() {
+        _bonusSpins += 1;
+      });
+      unawaited(_saveGameState());
+      unawaited(_syncAccountStats());
+      _showSnack('ได้รับ spin เพิ่มแล้ว');
+    } finally {
+      _startRewardSpinCooldown();
+    }
+  }
+
+  void _lockRewardSpinButton() {
+    _rewardSpinLockTimer?.cancel();
+    setState(() => _rewardSpinLocked = true);
+  }
+
+  void _startRewardSpinCooldown() {
+    _rewardSpinLockTimer?.cancel();
+    _rewardSpinLockTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() => _rewardSpinLocked = false);
     });
-    unawaited(_saveGameState());
-    unawaited(_syncAccountStats());
-    _showSnack('ได้รับ spin เพิ่มแล้ว');
   }
 
   void _toggleSaved(TravelDestination place) {
@@ -3135,6 +3161,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
             progress: _shuffleController,
             isRandomizing: _isRandomizing,
             isSpinCoolingDown: _spinCooldownActive,
+            isRewardSpinLocked: _rewardSpinLocked,
             onRandomize: _randomizeTrip,
             onRewardSpin: _watchRewardAd,
             onNearby: () => _setNearbyMode(!_nearbyMode),
@@ -3309,6 +3336,7 @@ class _TravelSpinPageState extends State<TravelSpinPage>
             badges: _badgeNames.toList(),
             historyCount: _historyKeys.length,
             savedCount: _savedPlaceKeys.length,
+            rewardSpinLocked: _rewardSpinLocked,
             onRewardSpin: _watchRewardAd,
             onChallengeChanged: _selectChallenge,
           ),
@@ -3614,6 +3642,7 @@ class _HomeMapSpinHero extends StatelessWidget {
     required this.progress,
     required this.isRandomizing,
     required this.isSpinCoolingDown,
+    required this.isRewardSpinLocked,
     required this.onRandomize,
     required this.onRewardSpin,
     required this.onNearby,
@@ -3627,6 +3656,7 @@ class _HomeMapSpinHero extends StatelessWidget {
   final Animation<double> progress;
   final bool isRandomizing;
   final bool isSpinCoolingDown;
+  final bool isRewardSpinLocked;
   final VoidCallback onRandomize;
   final VoidCallback onRewardSpin;
   final VoidCallback onNearby;
@@ -3781,7 +3811,12 @@ class _HomeMapSpinHero extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Center(child: _RewardSpinButton(onTap: onRewardSpin)),
+                  Center(
+                    child: _RewardSpinButton(
+                      locked: isRewardSpinLocked,
+                      onTap: onRewardSpin,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3793,8 +3828,9 @@ class _HomeMapSpinHero extends StatelessWidget {
 }
 
 class _RewardSpinButton extends StatelessWidget {
-  const _RewardSpinButton({required this.onTap});
+  const _RewardSpinButton({required this.locked, required this.onTap});
 
+  final bool locked;
   final VoidCallback onTap;
 
   @override
@@ -3805,7 +3841,7 @@ class _RewardSpinButton extends StatelessWidget {
       shadowColor: _brandBlue.withValues(alpha: 0.16),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        onTap: onTap,
+        onTap: locked ? null : onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -3813,18 +3849,20 @@ class _RewardSpinButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: Colors.white, width: 1.4),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.play_circle_fill_rounded,
+                locked
+                    ? Icons.hourglass_top_rounded
+                    : Icons.play_circle_fill_rounded,
                 color: _brandOrange,
                 size: 22,
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
-                'รับ spin เพิ่ม',
-                style: TextStyle(
+                locked ? 'รอสักครู่' : 'รับ spin เพิ่ม',
+                style: const TextStyle(
                   color: _brandDeepBlue,
                   fontWeight: FontWeight.w900,
                   fontSize: 14,
@@ -5805,6 +5843,7 @@ class _GameHubPanel extends StatelessWidget {
     required this.badges,
     required this.historyCount,
     required this.savedCount,
+    required this.rewardSpinLocked,
     required this.onRewardSpin,
     required this.onChallengeChanged,
   });
@@ -5818,6 +5857,7 @@ class _GameHubPanel extends StatelessWidget {
   final List<String> badges;
   final int historyCount;
   final int savedCount;
+  final bool rewardSpinLocked;
   final VoidCallback onRewardSpin;
   final ValueChanged<ChallengeType> onChallengeChanged;
 
@@ -5871,9 +5911,13 @@ class _GameHubPanel extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: onRewardSpin,
-              icon: const Icon(Icons.play_circle_fill_rounded),
-              label: const Text('รับ spin เพิ่ม'),
+              onPressed: rewardSpinLocked ? null : onRewardSpin,
+              icon: Icon(
+                rewardSpinLocked
+                    ? Icons.hourglass_top_rounded
+                    : Icons.play_circle_fill_rounded,
+              ),
+              label: Text(rewardSpinLocked ? 'รอสักครู่' : 'รับ spin เพิ่ม'),
               style: OutlinedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
