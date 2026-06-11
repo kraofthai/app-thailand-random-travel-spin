@@ -133,6 +133,17 @@ function sendHtml(response, statusCode, html) {
   response.end(html);
 }
 
+function sendText(response, statusCode, text) {
+  response.writeHead(statusCode, {
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'public, max-age=3600',
+    'Content-Type': 'text/plain; charset=utf-8',
+  });
+  response.end(text);
+}
+
+const appAdsTxt = 'google.com, pub-7751163285690243, DIRECT, f08c47fec0942fa0\n';
+
 function privacyPolicyHtml() {
   const updatedAt = '6 May 2026';
   return `<!doctype html>
@@ -1057,6 +1068,11 @@ const server = createServer(async (request, response) => {
 
   if (request.method === 'GET' && url.pathname === '/privacy') {
     sendHtml(response, 200, privacyPolicyHtml());
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/app-ads.txt') {
+    sendText(response, 200, appAdsTxt);
     return;
   }
 
