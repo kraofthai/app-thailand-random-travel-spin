@@ -66,13 +66,32 @@
             "value": "public, max-age=3600"
           }
         ]
-      }
-    ],
-    "redirects": [
+      },
+      {
+        "source": "/.well-known/app-ads.txt",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "text/plain; charset=utf-8"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=3600"
+          }
+        ]
+      },
       {
         "source": "/privacy",
-        "destination": "/privacy.html",
-        "type": 301
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "text/html; charset=utf-8"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=3600"
+          }
+        ]
       }
     ]
   }
